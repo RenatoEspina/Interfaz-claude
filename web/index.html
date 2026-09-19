@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Clawd Deck</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="css/app.css" />
+<link rel="stylesheet" href="css/clawd.css" />
+</head>
+<body>
+<div id="app" class="app">
+
+  <!-- ───────────────────────── Panel izquierdo: Clawd ───────────────────────── -->
+  <aside class="rail" id="rail">
+    <header class="rail__brand">
+      <span class="rail__logo">◍</span>
+      <div>
+        <h1>Clawd Deck</h1>
+        <p id="project-name" class="rail__project">…</p>
+      </div>
+      <button id="theme-toggle" class="icon-btn" title="Cambiar tema" aria-label="Cambiar tema">◐</button>
+    </header>
+
+    <section class="stage" id="stage" data-state="idle" aria-live="polite">
+      <div class="stage__glow"></div>
+      <svg class="clawd" id="clawd" viewBox="0 0 200 150" role="img" aria-labelledby="clawd-title" shape-rendering="crispEdges">
+        <title id="clawd-title">Clawd, la mascota del panel</title>
+
+        <!-- Clawd en pixel art, con la misma silueta que aparece en la terminal -->
+        <g class="clawd__float">
+          <g class="sprite" transform="translate(28,26) scale(0.62)">
+          <g class="clawd__body">
+            <rect class="px px--body" x="30" y="20" width="140" height="90" />
+            <rect class="px px--arm arm--l" x="10" y="63" width="20" height="25" />
+            <rect class="px px--arm arm--r" x="170" y="63" width="20" height="25" />
+
+            <g class="legs">
+              <rect class="px px--leg leg--1" x="41" y="110" width="10" height="28" />
+              <rect class="px px--leg leg--2" x="57" y="110" width="10" height="28" />
+              <rect class="px px--leg leg--3" x="127" y="110" width="10" height="28" />
+              <rect class="px px--leg leg--4" x="143" y="110" width="10" height="28" />
+            </g>
+
+            <g class="eyes">
+              <rect class="eye eye--l" x="50" y="35" width="10" height="32" />
+              <rect class="eye eye--r" x="140" y="35" width="10" height="32" />
+            </g>
+          </g>
+
+          <g class="prop prop--x">
+            <rect class="bit bit--ink" x="42" y="36" width="9" height="9" /><rect class="bit bit--ink" x="59" y="36" width="9" height="9" />
+            <rect class="bit bit--ink" x="50" y="46" width="9" height="9" />
+            <rect class="bit bit--ink" x="42" y="56" width="9" height="9" /><rect class="bit bit--ink" x="59" y="56" width="9" height="9" />
+            <rect class="bit bit--ink" x="132" y="36" width="9" height="9" /><rect class="bit bit--ink" x="149" y="36" width="9" height="9" />
+            <rect class="bit bit--ink" x="140" y="46" width="9" height="9" />
+            <rect class="bit bit--ink" x="132" y="56" width="9" height="9" /><rect class="bit bit--ink" x="149" y="56" width="9" height="9" />
+          </g>
+          </g>
+
+          <!-- utileria por estado, tambien en pixeles -->
+          <g class="props">
+            <g class="prop prop--think">
+              <rect class="bit" x="150" y="58" width="8" height="8" />
+              <rect class="bit" x="160" y="42" width="12" height="12" />
+              <rect class="bit" x="174" y="20" width="18" height="18" />
+            </g>
+
+            <g class="prop prop--read">
+              <rect class="bit" x="38" y="74" width="44" height="32" />
+              <rect class="bit" x="86" y="74" width="44" height="32" />
+              <rect class="bit bit--hole line--1" x="44" y="81" width="32" height="5" />
+              <rect class="bit bit--hole line--2" x="44" y="92" width="32" height="5" />
+              <rect class="bit bit--hole line--3" x="92" y="81" width="32" height="5" />
+              <rect class="bit bit--hole line--4" x="92" y="92" width="32" height="5" />
+            </g>
+
+            <g class="prop prop--write">
+              <g class="pencil">
+                <rect class="bit" x="176" y="24" width="12" height="12" />
+                <rect class="bit" x="164" y="36" width="12" height="12" />
+                <rect class="bit" x="152" y="48" width="12" height="12" />
+                <rect class="bit bit--tip" x="142" y="58" width="10" height="10" />
+              </g>
+              <g class="typed">
+                <rect class="bit t1" x="140" y="86" width="10" height="8" />
+                <rect class="bit t2" x="154" y="86" width="10" height="8" />
+                <rect class="bit t3" x="168" y="86" width="10" height="8" />
+              </g>
+            </g>
+
+            <g class="prop prop--search">
+              <g class="lens">
+                <rect class="bit" x="146" y="20" width="40" height="8" />
+                <rect class="bit" x="146" y="52" width="40" height="8" />
+                <rect class="bit" x="146" y="20" width="8" height="40" />
+                <rect class="bit" x="178" y="20" width="8" height="40" />
+                <rect class="bit" x="186" y="60" width="8" height="8" />
+                <rect class="bit" x="188" y="68" width="8" height="8" />
+              </g>
+            </g>
+
+            <g class="prop prop--run">
+              <rect class="bit" x="142" y="14" width="56" height="8" />
+              <rect class="bit" x="142" y="54" width="56" height="8" />
+              <rect class="bit" x="142" y="14" width="8" height="48" />
+              <rect class="bit" x="190" y="14" width="8" height="48" />
+              <rect class="bit" x="154" y="30" width="7" height="7" />
+              <rect class="bit" x="161" y="37" width="7" height="7" />
+              <rect class="bit" x="154" y="44" width="7" height="7" />
+              <rect class="bit cursor-bit" x="174" y="37" width="13" height="9" />
+            </g>
+
+            <g class="prop prop--web">
+              <rect class="bit" x="148" y="14" width="24" height="8" />
+              <rect class="bit" x="140" y="22" width="40" height="8" />
+              <rect class="bit" x="136" y="30" width="48" height="24" />
+              <rect class="bit" x="140" y="54" width="40" height="8" />
+              <rect class="bit" x="148" y="62" width="24" height="8" />
+              <rect class="bit bit--hole" x="136" y="38" width="48" height="4" />
+              <rect class="bit bit--hole" x="136" y="48" width="48" height="4" />
+              <rect class="bit bit--hole meridian" x="156" y="14" width="6" height="56" />
+            </g>
+
+            <g class="prop prop--delegate">
+              <g class="mini m1"><rect class="bit" x="142" y="24" width="20" height="14" /><rect class="bit" x="138" y="30" width="4" height="6" /><rect class="bit" x="162" y="30" width="4" height="6" /></g>
+              <g class="mini m2"><rect class="bit" x="170" y="44" width="20" height="14" /><rect class="bit" x="166" y="50" width="4" height="6" /><rect class="bit" x="190" y="50" width="4" height="6" /></g>
+              <g class="mini m3"><rect class="bit" x="144" y="64" width="20" height="14" /><rect class="bit" x="140" y="70" width="4" height="6" /><rect class="bit" x="164" y="70" width="4" height="6" /></g>
+            </g>
+
+            <g class="prop prop--ask">
+              <g class="question">
+                <rect class="bit" x="148" y="14" width="32" height="8" />
+                <rect class="bit" x="172" y="22" width="8" height="10" />
+                <rect class="bit" x="164" y="32" width="8" height="10" />
+                <rect class="bit" x="160" y="42" width="8" height="10" />
+                <rect class="bit" x="160" y="58" width="8" height="8" />
+              </g>
+            </g>
+
+            <g class="prop prop--done">
+              <g class="spark spark--1"><rect class="bit" x="146" y="26" width="24" height="8" /><rect class="bit" x="154" y="18" width="8" height="24" /></g>
+              <g class="spark spark--2"><rect class="bit" x="4" y="36" width="18" height="6" /><rect class="bit" x="10" y="30" width="6" height="18" /></g>
+              <g class="spark spark--3"><rect class="bit" x="172" y="94" width="18" height="6" /><rect class="bit" x="178" y="88" width="6" height="18" /></g>
+            </g>
+
+            <g class="prop prop--error">
+              <g class="bolt">
+                <rect class="bit" x="162" y="14" width="12" height="12" />
+                <rect class="bit" x="152" y="26" width="12" height="12" />
+                <rect class="bit" x="144" y="38" width="28" height="12" />
+                <rect class="bit" x="156" y="50" width="12" height="12" />
+                <rect class="bit" x="148" y="62" width="12" height="12" />
+              </g>
+            </g>
+
+          </g>
+        </g>
+      </svg>
+
+      <div class="stage__status">
+        <span class="pulse" id="state-dot"></span>
+        <strong id="state-label">En reposo</strong>
+      </div>
+      <p class="stage__detail" id="state-detail">Clawd espera instrucciones</p>
+    </section>
+
+    <section class="metrics" id="metrics">
+      <div class="metric"><span class="metric__k">Turnos</span><span class="metric__v" id="m-turns">0</span></div>
+      <div class="metric"><span class="metric__k">Coste</span><span class="metric__v" id="m-cost">—</span></div>
+      <div class="metric"><span class="metric__k">Modelo</span><span class="metric__v" id="m-model">—</span></div>
+      <div class="metric"><span class="metric__k">Permisos</span><span class="metric__v" id="m-perm">—</span></div>
+    </section>
+
+    <nav class="rail__nav" id="rail-nav">
+      <button class="navbtn is-active" data-panel="overview">◆ Resumen</button>
+      <button class="navbtn" data-panel="memory">▤ CLAUDE.md</button>
+      <button class="navbtn" data-panel="skills">✦ Skills</button>
+      <button class="navbtn" data-panel="commands">⌘ Comandos</button>
+      <button class="navbtn" data-panel="agents">⚇ Agentes</button>
+      <button class="navbtn" data-panel="config">⚙ Config &amp; MCP</button>
+      <button class="navbtn" data-panel="files">▧ Archivos</button>
+      <button class="navbtn" data-panel="sessions">⟳ Sesiones</button>
+      <button class="navbtn" data-panel="docs">✍ Documentacion</button>
+    </nav>
+
+    <footer class="rail__foot">
+      <span id="conn-state" class="chip chip--muted">conectando…</span>
+      <button id="btn-reset" class="ghost-btn" title="Nueva conversacion">nueva sesion</button>
+    </footer>
+  </aside>
+
+  <!-- ───────────────────────── Centro: conversacion ───────────────────────── -->
+  <main class="chat">
+    <div class="chat__head">
+      <div class="tabsbar" id="quickinfo">
+        <span class="chip" id="chip-session">sin sesion</span>
+        <span class="chip" id="chip-cwd">…</span>
+      </div>
+      <div class="chat__actions">
+        <select id="sel-model" class="mini-select" title="Modelo">
+          <option value="">modelo por defecto</option>
+          <option value="opus">opus</option>
+          <option value="sonnet">sonnet</option>
+          <option value="haiku">haiku</option>
+        </select>
+        <select id="sel-perm" class="mini-select" title="Modo de permisos">
+          <option value="default">permisos: preguntar</option>
+          <option value="acceptEdits">permisos: aceptar ediciones</option>
+          <option value="plan">permisos: plan</option>
+          <option value="dontAsk">permisos: no preguntar</option>
+          <option value="bypassPermissions">permisos: sin limites</option>
+        </select>
+        <button id="btn-interrupt" class="danger-btn" disabled>■ interrumpir</button>
+      </div>
+    </div>
+
+    <div class="stream" id="stream">
+      <div class="empty" id="empty-state">
+        <div class="empty__art">◍</div>
+        <h2>Clawd esta listo</h2>
+        <p>Escribe abajo para lanzar un turno de Claude Code en <code id="empty-cwd">este proyecto</code>.
+           La mascota de la izquierda cambia de animacion segun lo que Clawd este haciendo:
+           leer, escribir, buscar, ejecutar comandos o navegar.</p>
+        <div class="empty__hints" id="empty-hints"></div>
+      </div>
+    </div>
+
+    <div class="composer">
+      <div id="permission-tray" class="permtray" hidden></div>
+      <div class="composer__box">
+        <textarea id="input" rows="1" placeholder="Pide algo a Claude Code…  (Enter envia, Shift+Enter salto de linea)"></textarea>
+        <button id="btn-send" class="send-btn" title="Enviar">▶</button>
+      </div>
+      <div class="composer__meta">
+        <span id="composer-hint">Enter envia · Shift+Enter nueva linea · Esc interrumpe</span>
+        <span id="composer-count"></span>
+      </div>
+    </div>
+  </main>
+
+  <!-- ───────────────────────── Derecha: utilidades ───────────────────────── -->
+  <section class="side" id="side">
+    <header class="side__head">
+      <h2 id="side-title">Resumen</h2>
+      <div class="side__tools">
+        <button id="side-refresh" class="icon-btn" title="Recargar">⟳</button>
+        <button id="side-collapse" class="icon-btn" title="Ocultar panel">✕</button>
+      </div>
+    </header>
+    <div class="side__body" id="side-body"></div>
+  </section>
+
+  <button id="side-open" class="side-open" title="Mostrar utilidades" hidden>☰</button>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

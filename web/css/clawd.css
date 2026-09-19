@@ -1,0 +1,223 @@
+/* ==========================================================================
+   Clawd en pixel art — la misma silueta que saluda en la terminal.
+   Cada estado del agente enciende su propia escena:
+   idle booting thinking reading writing searching running web
+   delegating asking done error stopped
+   ========================================================================== */
+
+.stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 8px 14px;
+  border-radius: var(--r-lg);
+  background: var(--stage-bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.stage__glow {
+  position: absolute;
+  inset: -30% -10% auto -10%;
+  height: 70%;
+  background: radial-gradient(ellipse at 50% 60%, var(--glow) 0%, transparent 70%);
+  opacity: .5;
+  transition: background .4s ease, opacity .4s ease;
+  pointer-events: none;
+}
+
+.clawd {
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+  display: block;
+  overflow: visible;
+  image-rendering: pixelated;
+  --clawd-skin: #c8714f;
+  --clawd-ink: #17110f;
+  --prop: var(--accent);
+  --prop-hole: var(--stage-hole);
+}
+
+/* piezas base */
+.px--body, .px--arm, .px--leg { fill: var(--clawd-skin); }
+.eye { fill: var(--clawd-ink); transform-box: fill-box; transform-origin: center; }
+.bit { fill: var(--prop); }
+.bit--hole { fill: var(--prop-hole); }
+.bit--ink { fill: var(--clawd-ink); }
+.bit--tip { fill: var(--clawd-ink); }
+
+.clawd__float { transform-box: fill-box; transform-origin: 50% 100%; animation: bob 1.6s steps(2, jump-none) infinite; }
+.clawd__body  { transform-box: fill-box; transform-origin: 50% 100%; }
+.px--arm      { transform-box: fill-box; transform-origin: 50% 50%; }
+.px--leg      { transform-box: fill-box; transform-origin: 50% 0%; }
+.eyes         { transform-box: fill-box; transform-origin: center; }
+.props        { transform-box: fill-box; }
+
+/* utileria oculta por defecto */
+.prop { opacity: 0; visibility: hidden; }
+.prop * { transform-box: fill-box; transform-origin: center; }
+
+/* ===================== animaciones (todo a pasos, como un sprite) ======== */
+@keyframes bob          { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-6px) } }
+@keyframes bob-fast     { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-9px) } }
+@keyframes bob-slow     { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
+@keyframes hop          { 0%,100% { transform: translateY(0) } 40% { transform: translateY(-16px) } 70% { transform: translateY(-4px) } }
+@keyframes sink         { 0%,100% { transform: translateY(4px) } 50% { transform: translateY(7px) } }
+@keyframes blink        { 0%,94%,100% { transform: scaleY(1) } 97% { transform: scaleY(.12) } }
+@keyframes blink-fast   { 0%,84%,100% { transform: scaleY(1) } 92% { transform: scaleY(.12) } }
+@keyframes squint       { 0%,100% { transform: scaleY(.45) } }
+@keyframes half         { 0%,100% { transform: scaleY(.3) translateY(10px) } }
+@keyframes look-lr      { 0%,49% { transform: translateX(-7px) } 50%,100% { transform: translateX(7px) } }
+@keyframes look-up      { 0%,100% { transform: translateY(-5px) scaleY(.75) } }
+@keyframes look-down    { 0%,100% { transform: translateY(6px) scaleY(.7) } }
+@keyframes shake-x      { 0%,100% { transform: translateX(0) } 25% { transform: translateX(-5px) } 75% { transform: translateX(5px) } }
+@keyframes lean         { 0%,49% { transform: translateX(-4px) } 50%,100% { transform: translateX(4px) } }
+@keyframes arm-tap      { 0%,49% { transform: translateY(0) } 50%,100% { transform: translateY(-10px) } }
+@keyframes arm-tap-alt  { 0%,49% { transform: translateY(-10px) } 50%,100% { transform: translateY(0) } }
+@keyframes arm-wave     { 0%,49% { transform: translateY(-6px) } 50%,100% { transform: translateY(6px) } }
+@keyframes step-leg     { 0%,49% { transform: translateY(0) } 50%,100% { transform: translateY(-7px) } }
+@keyframes appear       { 0%,100% { opacity: .28 } 50% { opacity: 1 } }
+@keyframes blip         { 0%,49% { opacity: 1 } 50%,100% { opacity: .15 } }
+@keyframes sweep-x      { 0% { transform: translate(0,0) } 33% { transform: translate(-40px,14px) } 66% { transform: translate(-80px,0) } 100% { transform: translate(0,0) } }
+@keyframes meridian     { 0% { transform: translateX(-16px) } 50% { transform: translateX(16px) } 100% { transform: translateX(-16px) } }
+@keyframes pulse-bit    { 0%,100% { opacity: .3 } 50% { opacity: 1 } }
+@keyframes pop-bit      { 0% { opacity: 0; transform: scale(.4) } 50% { opacity: 1; transform: scale(1) } 100% { opacity: 0; transform: scale(.6) } }
+@keyframes tap-pencil   { 0%,49% { transform: translate(0,0) } 50%,100% { transform: translate(-4px,6px) } }
+@keyframes type-bit     { 0%,30% { opacity: 0 } 40%,100% { opacity: 1 } }
+@keyframes flicker      { 0%,100% { opacity: 1 } 50% { opacity: .55 } }
+
+/* =============================== idle =================================== */
+[data-state="idle"] .eye { animation: blink 5s steps(1, jump-none) infinite; }
+[data-state="idle"] .arm--l { animation: arm-wave 3.2s steps(1) infinite; }
+[data-state="idle"] .arm--r { animation: arm-wave 3.2s steps(1) 1.6s infinite; }
+
+/* ============================== booting ================================= */
+[data-state="booting"] .clawd__float { animation: bob-fast .5s steps(2, jump-none) infinite; }
+[data-state="booting"] .clawd__body { animation: shake-x .4s steps(2) infinite; }
+[data-state="booting"] .eye { animation: blink-fast 1s steps(1) infinite; }
+[data-state="booting"] .prop--run { opacity: .75; visibility: visible; }
+[data-state="booting"] .prop--run .cursor-bit { animation: blip .4s steps(1) infinite; }
+
+/* ============================== thinking ================================ */
+[data-state="thinking"] .clawd__float { animation: bob-slow 2.4s steps(2, jump-none) infinite; }
+[data-state="thinking"] .eyes { animation: look-up 2.4s steps(1) infinite; }
+[data-state="thinking"] .eye { animation: blink 4s steps(1) infinite; }
+[data-state="thinking"] .prop--think { opacity: 1; visibility: visible; }
+[data-state="thinking"] .prop--think .bit { animation: appear 1.8s steps(2, jump-none) infinite; }
+[data-state="thinking"] .prop--think .bit:nth-child(2) { animation-delay: .3s; }
+[data-state="thinking"] .prop--think .bit:nth-child(3) { animation-delay: .6s; }
+
+/* =============================== reading ================================ */
+[data-state="reading"] .prop--read { opacity: 1; visibility: visible; }
+[data-state="reading"] .eyes { animation: look-down 3s steps(1) infinite; }
+[data-state="reading"] .eye { animation: blink 4.5s steps(1) infinite; }
+[data-state="reading"] .clawd__float { animation: bob-slow 3.2s steps(2, jump-none) infinite; }
+[data-state="reading"] .prop--read .line--1 { animation: blip 1.2s steps(1) infinite; }
+[data-state="reading"] .prop--read .line--2 { animation: blip 1.2s steps(1) .3s infinite; }
+[data-state="reading"] .prop--read .line--3 { animation: blip 1.2s steps(1) .6s infinite; }
+[data-state="reading"] .prop--read .line--4 { animation: blip 1.2s steps(1) .9s infinite; }
+[data-state="reading"] .arm--l { transform: translateY(8px); }
+[data-state="reading"] .arm--r { transform: translateY(8px); }
+
+/* =============================== writing ================================ */
+[data-state="writing"] .prop--write { opacity: 1; visibility: visible; }
+[data-state="writing"] .prop--write .pencil { animation: tap-pencil .5s steps(1) infinite; }
+[data-state="writing"] .prop--write .t1 { animation: type-bit 1.5s steps(1) infinite; }
+[data-state="writing"] .prop--write .t2 { animation: type-bit 1.5s steps(1) .3s infinite; }
+[data-state="writing"] .prop--write .t3 { animation: type-bit 1.5s steps(1) .6s infinite; }
+[data-state="writing"] .arm--r { animation: arm-tap .5s steps(1) infinite; }
+[data-state="writing"] .eyes { animation: look-down 3s steps(1) infinite; }
+[data-state="writing"] .eye { animation: blink 4s steps(1) infinite; }
+
+/* ============================== searching =============================== */
+[data-state="searching"] .prop--search { opacity: 1; visibility: visible; }
+[data-state="searching"] .prop--search .lens { animation: sweep-x 2.4s steps(3, jump-none) infinite; }
+[data-state="searching"] .eyes { animation: look-lr 2.4s steps(1) infinite; }
+[data-state="searching"] .eye { animation: blink 3.5s steps(1) infinite; }
+[data-state="searching"] .arm--r { animation: arm-wave 2.4s steps(1) infinite; }
+
+/* =============================== running ================================ */
+[data-state="running"] .prop--run { opacity: 1; visibility: visible; }
+[data-state="running"] .prop--run .cursor-bit { animation: blip .5s steps(1) infinite; }
+[data-state="running"] .clawd__float { animation: bob-fast .8s steps(2, jump-none) infinite; }
+[data-state="running"] .arm--l { animation: arm-tap .3s steps(1) infinite; }
+[data-state="running"] .arm--r { animation: arm-tap-alt .3s steps(1) infinite; }
+[data-state="running"] .leg--1, [data-state="running"] .leg--3 { animation: step-leg .4s steps(1) infinite; }
+[data-state="running"] .leg--2, [data-state="running"] .leg--4 { animation: step-leg .4s steps(1) .2s infinite; }
+[data-state="running"] .eye { animation: blink 3s steps(1) infinite; }
+
+/* ================================= web ================================== */
+[data-state="web"] .prop--web { opacity: 1; visibility: visible; }
+[data-state="web"] .prop--web .meridian { animation: meridian 2.4s steps(4, jump-none) infinite; }
+[data-state="web"] .eyes { animation: look-lr 3.2s steps(1) infinite; }
+[data-state="web"] .eye { animation: blink 5s steps(1) infinite; }
+[data-state="web"] .clawd__body { animation: lean 3.2s steps(1) infinite; }
+
+/* ============================= delegating =============================== */
+[data-state="delegating"] .prop--delegate { opacity: 1; visibility: visible; }
+[data-state="delegating"] .prop--delegate .mini { animation: pulse-bit 1.5s steps(2, jump-none) infinite; }
+[data-state="delegating"] .prop--delegate .m2 { animation-delay: .5s; }
+[data-state="delegating"] .prop--delegate .m3 { animation-delay: 1s; }
+[data-state="delegating"] .arm--r { animation: arm-wave 1s steps(1) infinite; }
+[data-state="delegating"] .eye { animation: blink 4s steps(1) infinite; }
+
+/* =============================== asking ================================= */
+[data-state="asking"] .prop--ask { opacity: 1; visibility: visible; }
+[data-state="asking"] .prop--ask .question { animation: bob 1s steps(2, jump-none) infinite; }
+[data-state="asking"] .clawd__body { animation: lean 1.4s steps(1) infinite; }
+[data-state="asking"] .eye { animation: blink 2s steps(1) infinite; }
+[data-state="asking"] .arm--l { animation: arm-wave 1.4s steps(1) infinite; }
+
+/* ================================ done ================================== */
+[data-state="done"] .prop--done { opacity: 1; visibility: visible; }
+[data-state="done"] .prop--done .spark { animation: pop-bit 1.4s steps(3, jump-none) infinite; }
+[data-state="done"] .prop--done .spark--2 { animation-delay: .35s; }
+[data-state="done"] .prop--done .spark--3 { animation-delay: .7s; }
+[data-state="done"] .clawd__float { animation: hop 1s steps(3, jump-none) infinite; }
+[data-state="done"] .eye { animation: squint 1s steps(1) infinite; }
+
+/* ================================ error ================================= */
+[data-state="error"] .clawd { --clawd-skin: #b4564a; }
+[data-state="error"] .prop--error, [data-state="error"] .prop--x { opacity: 1; visibility: visible; }
+[data-state="error"] .prop--error .bolt { animation: flicker .6s steps(1) infinite; }
+[data-state="error"] .eye { opacity: 0; }
+[data-state="error"] .clawd__float { animation: sink 2.4s steps(2, jump-none) infinite; }
+
+/* =============================== stopped ================================ */
+[data-state="stopped"] .clawd { --clawd-skin: #8d8078; }
+[data-state="stopped"] .clawd__float { animation: bob-slow 4s steps(2, jump-none) infinite; }
+[data-state="stopped"] .eye { animation: half 1s steps(1) infinite; }
+
+/* ======================= color del halo por estado ====================== */
+[data-state="idle"]       { --glow: color-mix(in srgb, var(--accent) 26%, transparent); }
+[data-state="booting"]    { --glow: color-mix(in srgb, #e08b45 45%, transparent); }
+[data-state="thinking"]   { --glow: color-mix(in srgb, #8b7cf6 42%, transparent); }
+[data-state="reading"]    { --glow: color-mix(in srgb, #4aa3d8 42%, transparent); }
+[data-state="writing"]    { --glow: color-mix(in srgb, #4fbf8b 42%, transparent); }
+[data-state="searching"]  { --glow: color-mix(in srgb, #e0b545 42%, transparent); }
+[data-state="running"]    { --glow: color-mix(in srgb, #e08b45 52%, transparent); }
+[data-state="web"]        { --glow: color-mix(in srgb, #47b8c9 42%, transparent); }
+[data-state="delegating"] { --glow: color-mix(in srgb, #b06fd0 42%, transparent); }
+[data-state="asking"]     { --glow: color-mix(in srgb, #e0b545 60%, transparent); }
+[data-state="done"]       { --glow: color-mix(in srgb, #4fbf8b 52%, transparent); }
+[data-state="error"]      { --glow: color-mix(in srgb, #d4574a 52%, transparent); }
+[data-state="stopped"]    { --glow: color-mix(in srgb, #8a8a8a 32%, transparent); }
+
+[data-state="thinking"]   .clawd { --prop: #8b7cf6; }
+[data-state="reading"]    .clawd { --prop: #4aa3d8; }
+[data-state="writing"]    .clawd { --prop: #4fbf8b; }
+[data-state="searching"]  .clawd { --prop: #e0b545; }
+[data-state="running"]    .clawd, [data-state="booting"] .clawd { --prop: #e08b45; }
+[data-state="web"]        .clawd { --prop: #47b8c9; }
+[data-state="delegating"] .clawd { --prop: #b06fd0; }
+[data-state="asking"]     .clawd { --prop: #e0b545; }
+[data-state="done"]       .clawd { --prop: #4fbf8b; }
+[data-state="error"]      .clawd { --prop: #d4574a; }
+
+/* ============================ accesibilidad ============================= */
+@media (prefers-reduced-motion: reduce) {
+  .clawd, .clawd * { animation: none !important; transition: none !important; }
+}

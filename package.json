@@ -1,0 +1,22 @@
+{
+  "name": "clawd-deck",
+  "version": "0.1.0",
+  "description": "Clawd Deck — una capa web local sobre Claude Code por terminal, con mascota animada segun la actividad, inspector de CLAUDE.md / skills / comandos y una boveda de documentacion.",
+  "type": "module",
+  "bin": {
+    "clawd-deck": "bin/clawd.js"
+  },
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node bin/clawd.js",
+    "dev": "node bin/clawd.js --open=false",
+    "check": "node --check src/server.js && node --check bin/clawd.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": ["claude-code", "cli", "ui", "terminal", "dashboard"],
+  "license": "MIT",
+  "private": true,
+  "dependencies": {}
+}
