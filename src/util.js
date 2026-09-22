@@ -13,6 +13,29 @@ export function safeJoin(root, relative) {
   return target;
 }
 
+/** ¿Vive `target` dentro de `root` (o es `root` mismo)? */
+export function isInside(root, target) {
+  const base = path.resolve(root);
+  const full = path.resolve(target);
+  return full === base || full.startsWith(base + path.sep);
+}
+
+/**
+ * Resuelve una ruta absoluta exigiendo que caiga bajo alguna de las raices
+ * permitidas. A diferencia de `safeJoin`, que encierra al usuario en el
+ * proyecto, esto abre el paso al selector de proyecto: el home y la carpeta
+ * con la que arranco el servidor.
+ */
+export function resolveWithinRoots(roots, target) {
+  const full = path.resolve(String(target || ''));
+  if (!roots.some((root) => isInside(root, full))) {
+    const err = new Error('Ruta fuera de las carpetas permitidas');
+    err.status = 403;
+    throw err;
+  }
+  return full;
+}
+
 export async function readIfExists(file) {
   try {
     return await fs.readFile(file, 'utf8');

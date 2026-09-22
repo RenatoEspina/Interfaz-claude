@@ -1,13 +1,16 @@
 import http from 'node:http';
 import path from 'node:path';
+import os from 'node:os';
 import { promises as fs } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { ClaudeSession } from './claude-session.js';
 import { DocsVault } from './docs.js';
+import { resolveWithinRoots, statIfExists } from './util.js';
 import {
   getOverview, getMemoryFiles, getSkills, getCommands, getAgents,
   getConfig, getGitInfo, getTree, readProjectFile, writeProjectFile, getSessions,
+  browseDirs,
 } from './project.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -34,12 +37,24 @@ export function createServer(options = {}) {
   const cwd = path.resolve(options.cwd || process.cwd());
   const token = options.token === false ? null : options.token || randomBytes(12).toString('hex');
   const docs = new DocsVault(options.docsDir || path.join(cwd, 'docs'));
+
+  // El proyecto abierto cambia en caliente desde la web, asi que vive en un
+  // contenedor mutable en vez de una constante cerrada sobre las rutas.
+  // `docsPinned` recuerda si el usuario fijo la boveda con --docs: en ese caso
+  // no se mueve al cambiar de proyecto.
+  const workspace = { cwd, docs, docsPinned: Boolean(options.docsDir) };
+
+  // Raices por las que se puede navegar al elegir proyecto: el home y la
+  // carpeta de arranque (que puede estar fuera del home).
+  const browseRoots = [...new Set([path.resolve(os.homedir()), cwd])];
+
   const session = new ClaudeSession({
     cwd,
     bin: options.bin,
     model: options.model,
     permissionMode: options.permissionMode,
     effort: options.effort,
+    addDirs: options.addDirs,
     extraArgs: options.extraArgs,
   });
 
@@ -55,7 +70,7 @@ export function createServer(options = {}) {
         if (!checkAuth(req, url, token)) return sendJson(res, 401, { error: 'Token invalido' });
         if (route === '/api/events') return handleSse(req, res, clients, session);
         const body = await readBody(req);
-        const result = await handleApi({ route, method: req.method, url, body, session, docs, cwd, options });
+        const result = await handleApi({ route, method: req.method, url, body, session, workspace, browseRoots, options });
         if (result === undefined) return sendJson(res, 404, { error: 'Ruta desconocida' });
         if (result && result[HTTP_REPLY]) return sendJson(res, result.status, result.body);
         return sendJson(res, 200, result);
@@ -69,19 +84,58 @@ export function createServer(options = {}) {
   });
 
   server.on('close', () => session.stop());
-  return { server, session, docs, token, cwd };
+  return { server, session, docs, token, cwd, workspace, browseRoots };
 }
 
 /* -------------------------------------------------------------------- */
 /* API                                                                   */
 /* -------------------------------------------------------------------- */
 
-async function handleApi({ route, method, url, body, session, docs, cwd, options }) {
+async function handleApi({ route, method, url, body, session, workspace, browseRoots, options }) {
   const q = (key) => url.searchParams.get(key);
+  // Se leen del contenedor en cada peticion porque el proyecto abierto puede
+  // haber cambiado desde la web (POST /api/project).
+  const cwd = workspace.cwd;
+  const docs = workspace.docs;
 
   switch (`${method} ${route}`) {
     case 'GET /api/state':
-      return { ...session.snapshot(), docsRoot: docs.root, projectName: path.basename(cwd) };
+      return {
+        ...session.snapshot(),
+        docsRoot: docs.root,
+        projectName: path.basename(cwd),
+        home: path.resolve(os.homedir()),
+        roots: browseRoots,
+      };
+
+    // Explorador de carpetas del selector de proyecto. Sin `path` arranca en el
+    // proyecto abierto, que es el sitio mas util para empezar a mirar.
+    case 'GET /api/browse': {
+      const data = await browseDirs(q('path') || cwd, browseRoots);
+      return { ...data, current: cwd, home: path.resolve(os.homedir()) };
+    }
+
+    // Cambia el proyecto en caliente: mueve el cwd de la sesion, reapunta la
+    // boveda de documentacion y cierra la conversacion anterior.
+    case 'POST /api/project': {
+      const requested = String(body?.path || '').trim();
+      if (!requested) return reply(400, { error: 'Falta la ruta de la carpeta' });
+      const target = resolveWithinRoots(browseRoots, requested);
+      const stat = await statIfExists(target);
+      if (!stat || !stat.isDirectory()) return reply(400, { error: 'La ruta no existe o no es una carpeta' });
+      if (target === workspace.cwd) return { ok: true, changed: false, cwd: target, docsRoot: docs.root };
+
+      workspace.cwd = target;
+      if (!workspace.docsPinned) workspace.docs.setRoot(path.join(target, 'docs'));
+      await session.setCwd(target);
+      session.push({ type: 'project', cwd: target, name: path.basename(target), docsRoot: workspace.docs.root });
+      session.push({
+        type: 'notice',
+        level: 'info',
+        text: `Proyecto cambiado a ${target}. La conversacion anterior se cerro.`,
+      });
+      return { ok: true, changed: true, cwd: target, docsRoot: workspace.docs.root, snapshot: session.snapshot() };
+    }
 
     case 'POST /api/message': {
       const text = String(body?.text || '');
@@ -117,7 +171,9 @@ async function handleApi({ route, method, url, body, session, docs, cwd, options
     }
 
     case 'POST /api/permission': {
-      const ok = session.answerPermission(String(body?.id || ''), Boolean(body?.allow), body?.note);
+      const ok = session.answerPermission(
+        String(body?.id || ''), Boolean(body?.allow), body?.note, Boolean(body?.remember),
+      );
       return { ok };
     }
 
@@ -138,8 +194,11 @@ async function handleApi({ route, method, url, body, session, docs, cwd, options
       return found;
     }
 
+    // Los `.md` de .claude/commands mas el catalogo que reporta el propio CLI
+    // (sus comandos, los de plugins y las skills), que solo existe con el
+    // proceso vivo.
     case 'GET /api/commands':
-      return { items: await getCommands(cwd) };
+      return { items: await getCommands(cwd), cli: session.commands, alive: session.isAlive() };
 
     case 'GET /api/agents':
       return { items: await getAgents(cwd) };

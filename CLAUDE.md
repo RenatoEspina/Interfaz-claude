@@ -49,9 +49,22 @@ hable `stream-json`; asi se desarrollo el panel.
 
 ## Cuidado con
 
+- `--permission-prompt-tool stdio` no es opcional: sin esa bandera el CLI no
+  manda `can_use_tool`, deniega solo con `system:permission_denied` ("This
+  command requires approval") y la bandeja de permisos nunca se abre. Es el
+  contrato que convierte al panel en anfitrion de permisos.
+- El confinamiento al `cwd` es distinto de los permisos: no se pregunta, se
+  bloquea. Carpetas extra solo con `--add-dir`.
 - El id de mensaje solo llega en `message_start`; sin memorizarlo, los deltas no
   casan con el bloque final y el texto se duplica (`streamMessageIds`).
 - Las respuestas de la API que necesitan otro codigo de estado usan el envoltorio
   `reply(status, body)` de `src/server.js`; devolver `{status, body}` a secas
   choca con los payloads que ya traen un campo `body`.
-- Toda ruta de archivo pasa por `safeJoin`, que rechaza salir del proyecto.
+- Toda ruta de archivo pasa por `safeJoin`, que rechaza salir del proyecto. La
+  excepcion es el selector de proyecto (`/api/browse`, `POST /api/project`), que
+  necesita justo lo contrario y valida con `resolveWithinRoots` contra el home y
+  la carpeta de arranque. Si añades rutas que miren fuera del proyecto, usa esa
+  y no relajes `safeJoin`.
+- El proyecto abierto cambia en caliente, asi que `src/server.js` lo guarda en el
+  objeto mutable `workspace` y cada peticion lee `workspace.cwd`. Un `cwd`
+  capturado en una clausura se queda con el proyecto de arranque.

@@ -132,6 +132,9 @@ a { color: var(--accent); }
   max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .chip--muted { opacity: .8; }
+/* El chip de la carpeta es un boton: abre el selector de proyecto. */
+.chip--action { cursor: pointer; display: inline-block; }
+.chip--action:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 .chip--ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--border)); }
 .chip--err { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, var(--border)); }
 
@@ -224,6 +227,7 @@ a { color: var(--accent); }
 }
 .perm__text { flex: 1; min-width: 180px; font-size: 12.5px; }
 .perm__text code { font-family: var(--mono); font-size: 11.5px; }
+.perm__reason { margin-top: 3px; font-size: 11px; color: var(--muted); }
 
 /* composer */
 .composer { padding: 10px 16px 14px; border-top: 1px solid var(--border); background: var(--bg-soft); }
@@ -244,7 +248,9 @@ a { color: var(--accent); }
 .side__head h2 { margin: 0; font-size: 14px; }
 .side__tools { display: flex; gap: 4px; }
 .side__body { flex: 1; overflow-y: auto; padding: 12px 14px 24px; }
-.side-open { position: fixed; right: 12px; bottom: 12px; z-index: 30; width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: #fff; border: none; cursor: pointer; font-size: 16px; }
+/* El boton de "mostrar utilidades" va en la cabecera del chat. Cuando flotaba
+   fijo abajo a la derecha caia justo encima del boton de enviar. */
+#side-open { background: var(--accent); color: #fff; border-color: transparent; }
 
 .card {
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md);
@@ -333,9 +339,17 @@ a { color: var(--accent); }
   .app { grid-template-columns: 250px minmax(0, 1fr) 320px; }
 }
 @media (max-width: 960px) {
-  /* una sola columna: el lateral pasa a superponerse, tambien cuando esta plegado */
-  .app, .app.side-hidden { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); height: auto; min-height: 100dvh; }
-  .rail { flex-direction: row; flex-wrap: wrap; align-items: center; border-right: none; border-bottom: 1px solid var(--border); overflow: visible; }
+  /* una sola columna: el lateral pasa a superponerse, tambien cuando esta plegado.
+     La reja se queda clavada al alto de la ventana (no `height: auto`) para que
+     la pagina entera no haga scroll: el carril y el chat se desplazan por
+     dentro, cada uno por su lado, igual que en escritorio. */
+  .app, .app.side-hidden { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); height: 100dvh; }
+  .rail {
+    flex-direction: row; flex-wrap: wrap; align-items: center;
+    border-right: none; border-bottom: 1px solid var(--border);
+    /* acotado para que el chat siempre conserve sitio */
+    max-height: 42dvh; overflow-y: auto;
+  }
   .rail__brand { width: 100%; }
   .stage { width: 180px; }
   .metrics { flex: 1; grid-template-columns: repeat(4, 1fr); }
@@ -343,7 +357,7 @@ a { color: var(--accent); }
   .rail__foot { width: 100%; }
   .side { position: fixed; inset: 0; z-index: 40; border-left: none; }
   .app.side-hidden .side { display: none; }
-  .chat { min-height: 60vh; }
+  .chat { min-height: 0; }
 }
 @media (max-width: 560px) {
   .stage { width: 130px; }

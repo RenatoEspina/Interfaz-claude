@@ -11,12 +11,20 @@ export class DocsVault {
     this.root = path.resolve(root);
   }
 
+  /** Reapunta la boveda a otra carpeta al cambiar de proyecto. Se muta la
+   *  instancia en vez de crear otra para no dejar referencias viejas sueltas. */
+  setRoot(root) {
+    this.root = path.resolve(root);
+  }
+
   async ensure() {
     await fs.mkdir(this.root, { recursive: true });
   }
 
   async list() {
-    await this.ensure();
+    // Listar no crea la carpeta: al poder cambiar de proyecto desde la web,
+    // asomarse a la boveda de cualquier carpeta no debe sembrarle un `docs/`.
+    // La carpeta nace al guardar el primer documento (o con `ensure`).
     const docs = [];
     const walk = async (dir, depth = 0) => {
       if (depth > 2) return;

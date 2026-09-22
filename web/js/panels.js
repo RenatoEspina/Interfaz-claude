@@ -5,23 +5,28 @@ import { el, clear, formatBytes, timeAgo } from './dom.js';
 import { renderMarkdown } from './markdown.js';
 
 export const PANEL_TITLES = {
-  overview: 'Resumen', memory: 'CLAUDE.md', skills: 'Skills', commands: 'Comandos',
-  agents: 'Agentes', config: 'Config & MCP', files: 'Archivos', sessions: 'Sesiones',
-  docs: 'Documentacion',
+  overview: 'Resumen', project: 'Proyecto', memory: 'CLAUDE.md', skills: 'Skills',
+  commands: 'Comandos', agents: 'Agentes', config: 'Config & MCP', files: 'Archivos',
+  sessions: 'Sesiones', docs: 'Documentacion',
 };
 
 export class Panels {
-  constructor(container, { insertPrompt, notify }) {
+  constructor(container, { insertPrompt, runPrompt, notify, onShow }) {
     this.container = container;
     this.insertPrompt = insertPrompt;
+    this.runPrompt = runPrompt;
     this.notify = notify;
+    this.onShow = onShow;
     this.current = 'overview';
     this.filesPath = '.';
+    // null = el servidor decide donde empezar a explorar (el proyecto abierto).
+    this.browsePath = null;
     this.docsFilter = '';
   }
 
   async show(name) {
     this.current = name;
+    this.onShow?.(name);
     await this.render();
   }
 
@@ -96,6 +101,99 @@ export class Panels {
       frag.append(el('button', { class: 'hint-btn', text: label, onclick: () => this.insertPrompt(prompt) }));
     }
     return frag;
+  }
+
+  /* ----------------------------------------------------------- proyecto */
+
+  async render_project() {
+    let data;
+    try {
+      data = await api.browse(this.browsePath);
+    } catch (err) {
+      // `browsePath` sobrevive entre renders, asi que si la carpeta desaparecio
+      // el panel quedaria atascado en el error. Se vuelve al proyecto abierto.
+      if (!this.browsePath) throw err;
+      this.browsePath = null;
+      this.notify(`No se pudo abrir esa carpeta: ${err.message}`);
+      data = await api.browse(null);
+    }
+    // El servidor devuelve la ruta ya resuelta; se guarda para que recargar el
+    // panel no vuelva al punto de partida.
+    this.browsePath = data.dir;
+    const isCurrent = data.dir === data.current;
+    const frag = document.createDocumentFragment();
+
+    frag.append(el('div', { class: 'empty-note', text: 'Elige la carpeta sobre la que trabaja Claude. Al cambiar se cierra la conversacion actual y empieza una nueva en el proyecto nuevo.' }));
+
+    frag.append(el('div', { class: 'card' }, [
+      el('div', { class: 'card__top' }, [
+        el('h3', { class: 'card__title', text: data.dir.split('/').filter(Boolean).pop() || '/' }),
+        isCurrent ? el('span', { class: 'tag tag--accent', text: 'proyecto actual' }) : null,
+      ]),
+      el('p', { class: 'card__desc mono', text: data.dir }),
+      el('div', { class: 'card__meta' }, [
+        data.isRepo ? el('span', { class: 'tag', text: 'git' }) : null,
+        data.hasMemory ? el('span', { class: 'tag', text: 'CLAUDE.md' }) : null,
+      ]),
+      isCurrent
+        ? null
+        : el('button', { class: 'primary-btn', text: 'Abrir esta carpeta', onclick: () => this.switchProject(data.dir) }),
+    ]));
+
+    const crumbs = el('div', { class: 'breadcrumb' });
+    if (data.parent) {
+      crumbs.append(el('button', { text: '↑ subir', onclick: () => { this.browsePath = data.parent; this.render(); } }));
+    }
+    crumbs.append(el('button', { text: '⌂ home', onclick: () => { this.browsePath = data.home; this.render(); } }));
+    if (!isCurrent) {
+      crumbs.append(el('button', { text: '◆ proyecto actual', onclick: () => { this.browsePath = data.current; this.render(); } }));
+    }
+    frag.append(crumbs);
+
+    frag.append(el('div', { class: 'section-title', text: 'Carpetas' }));
+    if (!data.items.length) {
+      frag.append(el('div', { class: 'empty-note', text: 'Aqui no hay subcarpetas visibles.' }));
+    }
+    for (const item of data.items) {
+      frag.append(el('div', {
+        class: 'file-row',
+        title: item.path,
+        onclick: () => { this.browsePath = item.path; this.render(); },
+      }, [
+        el('span', { class: 'file-row__icon', text: '▸' }),
+        el('span', { class: 'file-row__name', text: item.name }),
+        el('span', {
+          class: 'file-row__size',
+          text: [item.isRepo ? 'git' : null, item.hasMemory ? 'CLAUDE.md' : null].filter(Boolean).join(' · '),
+        }),
+        el('button', {
+          class: 'ghost-btn',
+          text: 'abrir',
+          // El clic en la fila navega; el del boton cambia de proyecto.
+          onclick: (event) => { event.stopPropagation(); this.switchProject(item.path); },
+        }),
+      ]));
+    }
+    return frag;
+  }
+
+  async switchProject(dir) {
+    if (!confirm(`¿Trabajar en ${dir}?\n\nSe cierra la conversacion actual de Claude Code.`)) return;
+    try {
+      const result = await api.setProject(dir);
+      if (result.changed === false) {
+        this.notify('Ya estabas en esa carpeta');
+        return;
+      }
+      // Los paneles que miraban el proyecto anterior quedan obsoletos.
+      this.filesPath = '.';
+      this.browsePath = dir;
+      this.docsFilter = '';
+      this.notify(`Proyecto: ${dir}`);
+      await this.show('overview');
+    } catch (err) {
+      this.notify(err.message);
+    }
   }
 
   /* ------------------------------------------------------------ memoria */
@@ -177,25 +275,78 @@ export class Panels {
   /* ----------------------------------------------------------- comandos */
 
   async render_commands() {
-    const { items } = await api.commands();
+    const { items, cli, alive } = await api.commands();
     const frag = document.createDocumentFragment();
+
+    // Un comando con argumentos no se puede lanzar a ciegas: se pega en el
+    // compositor para que escribas el resto. Los que no los piden se ejecutan.
+    const launcher = (name, argumentHint) => (argumentHint
+      ? el('button', {
+          class: 'ghost-btn',
+          text: 'insertar',
+          title: `Necesita argumentos: ${argumentHint}`,
+          onclick: (event) => { event.stopPropagation(); this.insertPrompt(`/${name} `); },
+        })
+      : el('button', {
+          class: 'primary-btn',
+          text: 'ejecutar',
+          onclick: (event) => { event.stopPropagation(); this.runPrompt(`/${name}`); },
+        }));
+
+    frag.append(el('div', { class: 'section-title', text: 'Del proyecto' }));
     if (!items.length) {
-      frag.append(el('div', { class: 'empty-note', text: 'Sin comandos propios. Crea .claude/commands/<nombre>.md para tener /nombre en la terminal.' }));
-      return frag;
+      frag.append(el('div', { class: 'empty-note', text: 'Sin comandos propios. Crea .claude/commands/<nombre>.md para tener /nombre.' }));
     }
     for (const cmd of items) {
-      frag.append(this.card({
-        title: cmd.name,
-        desc: cmd.description,
-        tags: [cmd.origin, cmd.argumentHint, cmd.model],
-        onClick: () => this.openViewer({
-          title: cmd.name,
-          subtitle: cmd.path,
-          markdown: cmd.content,
-          actions: [el('button', { class: 'ghost-btn', text: 'insertar en el chat', onclick: () => this.insertPrompt(`${cmd.name} `) })],
+      const name = String(cmd.name).replace(/^\//, '');
+      frag.append(el('div', { class: 'card' }, [
+        el('div', { class: 'card__top' }, [
+          el('h3', { class: 'card__title', text: `/${name}` }),
+          launcher(name, cmd.argumentHint),
+        ]),
+        cmd.description ? el('p', { class: 'card__desc', text: cmd.description }) : null,
+        el('div', { class: 'card__meta' }, [cmd.origin, cmd.argumentHint, cmd.model].filter(Boolean)
+          .map((t) => el('span', { class: 'tag', text: t }))),
+        el('button', {
+          class: 'ghost-btn',
+          text: 'ver definicion',
+          onclick: () => this.openViewer({ title: `/${name}`, subtitle: cmd.path, markdown: cmd.content }),
         }),
-      }));
+      ]));
     }
+
+    // El catalogo completo (comandos propios del CLI, de plugins y skills) solo
+    // lo conoce el proceso, y llega con el handshake `initialize`.
+    frag.append(el('div', { class: 'section-title', text: 'Del CLI de Claude Code' }));
+    if (!cli?.length) {
+      frag.append(el('div', { class: 'empty-note', text: alive
+        ? 'El proceso no ha devuelto el catalogo de comandos.'
+        : 'Arranca un turno para que Clawd Deck pida el catalogo de comandos al CLI.' }));
+      return frag;
+    }
+    const search = el('input', { class: 'search-input', placeholder: 'filtrar comandos…', type: 'search' });
+    const list = el('div', {});
+    const paint = () => {
+      const needle = search.value.toLowerCase();
+      clear(list);
+      const visible = cli.filter((c) => !needle
+        || c.name.toLowerCase().includes(needle)
+        || (c.description || '').toLowerCase().includes(needle));
+      if (!visible.length) list.append(el('div', { class: 'empty-note', text: 'Ningun comando coincide.' }));
+      for (const cmd of visible) {
+        list.append(el('div', { class: 'card' }, [
+          el('div', { class: 'card__top' }, [
+            el('h3', { class: 'card__title', text: `/${cmd.name}` }),
+            launcher(cmd.name, cmd.argumentHint),
+          ]),
+          cmd.description ? el('p', { class: 'card__desc', text: cmd.description }) : null,
+          cmd.argumentHint ? el('div', { class: 'card__meta' }, [el('span', { class: 'tag', text: cmd.argumentHint })]) : null,
+        ]));
+      }
+    };
+    search.addEventListener('input', paint);
+    frag.append(search, list);
+    paint();
     return frag;
   }
 

@@ -14,6 +14,8 @@ Opciones:
   --port <n>            Puerto HTTP (por defecto 4317)
   --host <h>            Interfaz de escucha (por defecto 127.0.0.1)
   --cwd <ruta>          Proyecto sobre el que trabaja Claude (por defecto, el actual)
+  --add-dir <ruta>      Carpeta extra a la que Claude puede acceder (repetible).
+                        Sin esto el CLI confina las herramientas al proyecto.
   --docs <ruta>         Carpeta de la boveda de documentacion (por defecto <cwd>/docs)
   --model <id>          Modelo a usar (opus, sonnet, haiku, claude-opus-5, ...)
   --permission-mode <m> manual | default | acceptEdits | dontAsk | bypassPermissions | plan
@@ -26,8 +28,20 @@ Opciones:
   -h, --help            Esta ayuda
 `;
 
+/** Banderas que se pueden repetir y por tanto acumulan valores en una lista. */
+const REPEATABLE = new Set(['addDir']);
+
 function parseArgs(argv) {
   const out = { _: [] };
+  const assign = (key, value) => {
+    if (!REPEATABLE.has(key)) {
+      out[key] = value;
+      return;
+    }
+    if (!Array.isArray(out[key])) out[key] = [];
+    out[key].push(value);
+  };
+
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg.startsWith('--')) {
@@ -40,9 +54,9 @@ function parseArgs(argv) {
     const next = argv[i + 1];
     const takesValue = !['noToken', 'readOnly', 'open', 'autostart', 'help'].includes(key);
     if (inlineValue !== undefined) {
-      out[key] = inlineValue;
+      assign(key, inlineValue);
     } else if (takesValue && next && !next.startsWith('--')) {
-      out[key] = next;
+      assign(key, next);
       i++;
     } else {
       out[key] = true;
@@ -67,6 +81,7 @@ const { server, session, token, docs } = createServer({
   model: args.model || process.env.CLAWD_DECK_MODEL || null,
   permissionMode: args.permissionMode || process.env.CLAWD_DECK_PERMISSION_MODE || 'acceptEdits',
   effort: args.effort || null,
+  addDirs: [].concat(args.addDir || []).map((dir) => path.resolve(dir)),
   bin: args.claudeBin || process.env.CLAWD_DECK_CLAUDE_BIN || 'claude',
   token: args.noToken ? false : process.env.CLAWD_DECK_TOKEN || undefined,
   readOnly: Boolean(args.readOnly),
@@ -83,6 +98,7 @@ server.listen(port, host, async () => {
   console.log(`  Proyecto : ${cwd}`);
   console.log(`  Docs     : ${docs.root}`);
   console.log(`  Claude   : ${session.bin} (permisos: ${session.permissionMode})`);
+  if (session.addDirs.length) console.log(`  Extra    : ${session.addDirs.join(', ')}`);
   console.log(`  URL      : ${url}`);
   if (!token) console.log('  Aviso    : token desactivado (--no-token)');
   console.log('');

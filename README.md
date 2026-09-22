@@ -39,10 +39,11 @@ La terminal imprime una URL con token, del estilo
 | --- | --- | --- |
 | `--port <n>` | `4317` | Puerto HTTP. |
 | `--host <h>` | `127.0.0.1` | Interfaz de escucha. |
-| `--cwd <ruta>` | directorio actual | Proyecto sobre el que trabaja Claude. |
+| `--cwd <ruta>` | directorio actual | Proyecto sobre el que trabaja Claude. Tambien se cambia desde la web. |
+| `--add-dir <ruta>` | — | Carpeta extra accesible para las herramientas (repetible). Sin esto el CLI confina todo al proyecto. |
 | `--docs <ruta>` | `<cwd>/docs` | Carpeta de la boveda de documentacion. |
 | `--model <id>` | el de tu configuracion | `opus`, `sonnet`, `haiku`, `claude-opus-5`… |
-| `--permission-mode <m>` | `acceptEdits` | `manual`, `plan`, `acceptEdits`, `dontAsk`, `bypassPermissions`. |
+| `--permission-mode <m>` | `acceptEdits` | `manual`, `auto`, `plan`, `acceptEdits`, `dontAsk`, `bypassPermissions`. |
 | `--effort <nivel>` | — | `low`, `medium`, `high`, `xhigh`, `max`. |
 | `--claude-bin <ruta>` | `claude` | Otro binario de Claude Code. |
 | `--read-only` | off | La interfaz no puede escribir archivos del proyecto. |
@@ -69,9 +70,16 @@ resultado, y un resumen por turno con duracion, pasos, coste y tokens.
 **Utilidades del proyecto**, en el panel derecho:
 
 - *Resumen* — estado de git, cuentas de skills/comandos/agentes/MCP y atajos.
+- *Proyecto* — cambia en caliente la carpeta sobre la que trabaja Claude, sin
+  reiniciar el servidor. Tambien se abre pulsando la ruta en la cabecera del
+  chat. Se navega por tu home y por la carpeta de arranque; al cambiar se cierra
+  la conversacion anterior (su `session_id` pertenece al proyecto viejo) y los
+  demas paneles pasan a mirar el proyecto nuevo.
 - *CLAUDE.md* — todos los archivos de memoria detectados, con editor.
 - *Skills* — las del proyecto, las tuyas y las de plugins, con su SKILL.md.
-- *Comandos* — los `/comando` de `.claude/commands`, listos para insertar.
+- *Comandos* — los `/comando` de `.claude/commands` y el catalogo completo que
+  reporta el CLI (los suyos, los de plugins y las skills). Los que no piden
+  argumentos se ejecutan con un boton; los que si, se insertan en el compositor.
 - *Agentes* — los subagentes de `.claude/agents`.
 - *Config & MCP* — servidores MCP, hooks y los `settings.json` que aplican.
 - *Archivos* — navegador del proyecto con visor y editor.

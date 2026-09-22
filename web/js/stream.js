@@ -45,7 +45,7 @@ export class StreamView {
       case 'notice': return this.addNotice(event);
       case 'log': return this.addLog(event.text);
       case 'permission': return this.addPermission(event);
-      case 'permission_resolved': return this.resolvePermission(event.id, event.allow);
+      case 'permission_resolved': return this.resolvePermission(event.id, event.allow, event.remembered);
       case 'reset': return this.reset();
       default: return undefined;
     }
@@ -170,12 +170,25 @@ export class StreamView {
       el('div', { class: 'perm__text' }, [
         el('strong', { text: `${event.tool} pide permiso` }),
         event.detail ? el('div', {}, [el('code', { text: event.detail })]) : null,
+        // El motivo que da el CLI ("This command requires approval", una regla
+        // de settings…) explica por que pregunta, que es lo que hace falta
+        // para decidir.
+        event.reason ? el('div', { class: 'perm__reason', text: event.reason }) : null,
       ]),
       el('button', {
         class: 'primary-btn',
         text: 'permitir',
         onclick: () => this.onPermission(event.id, true),
       }),
+      // Solo cuando el CLI propone reglas; se guardan en los settings del proyecto.
+      event.canRemember
+        ? el('button', {
+            class: 'ghost-btn',
+            text: 'permitir siempre',
+            title: 'Guarda una regla en los settings del proyecto para no volver a preguntar',
+            onclick: () => this.onPermission(event.id, true, true),
+          })
+        : null,
       el('button', {
         class: 'ghost-btn',
         text: 'denegar',
@@ -186,7 +199,7 @@ export class StreamView {
     tray.append(node);
   }
 
-  resolvePermission(id, allow) {
+  resolvePermission(id, allow, remembered) {
     const node = this.permissions.get(id);
     if (node) {
       node.remove();
@@ -194,7 +207,12 @@ export class StreamView {
     }
     const tray = document.getElementById('permission-tray');
     if (!tray.children.length) tray.hidden = true;
-    this.addNotice({ text: allow ? 'Permiso concedido.' : 'Permiso denegado.', level: allow ? 'info' : 'warn' });
+    this.addNotice({
+      text: allow
+        ? (remembered ? 'Permiso concedido y guardado como regla.' : 'Permiso concedido.')
+        : 'Permiso denegado.',
+      level: allow ? 'info' : 'warn',
+    });
   }
 
   /* ----------------------------------------------------------- utilidad */

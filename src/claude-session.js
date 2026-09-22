@@ -5,6 +5,9 @@ import { stateForTool, iconForState, describeToolInput, STATE_COPY } from './act
 
 const MAX_HISTORY = 800;
 
+/** Subtipos de `system` que el CLI repite como latido y no interesan en el hilo. */
+const NOISY_SYSTEM_SUBTYPES = new Set(['status', 'thinking_tokens']);
+
 /**
  * Envuelve el CLI de Claude Code en modo streaming JSON y traduce su salida
  * a un protocolo simple que el frontend consume por SSE.
@@ -22,8 +25,14 @@ export class ClaudeSession extends EventEmitter {
     this.model = options.model || null;
     this.permissionMode = options.permissionMode || 'acceptEdits';
     this.effort = options.effort || null;
+    this.addDirs = options.addDirs || [];
     this.extraArgs = options.extraArgs || [];
     this.autoDenyMs = Number(options.autoDenyMs || 120000);
+    // Catalogo de comandos que el CLI devuelve al handshake `initialize`:
+    // trae los suyos, los de plugins y las skills, con descripcion y pistas
+    // de argumentos. `system:init` solo da los nombres.
+    this.commands = [];
+    this.initRequestId = null;
 
     this.child = null;
     this.sessionId = null;
@@ -33,6 +42,7 @@ export class ClaudeSession extends EventEmitter {
     this.pendingPermissions = new Map();
     this.activeTools = new Map();
     this.streamMessageIds = new Map();
+    this.messageBlockOffsets = new Map();
     this.history = [];
     this.state = 'idle';
     this.stateLabel = STATE_COPY.idle.title;
@@ -59,11 +69,20 @@ export class ClaudeSession extends EventEmitter {
       '--output-format', 'stream-json',
       '--verbose',
       '--include-partial-messages',
+      // Sin esto el CLI no tiene anfitrion a quien preguntar: cualquier
+      // herramienta que necesite aprobacion se deniega sola con
+      // "This command requires approval" y nunca llega un `can_use_tool`,
+      // asi que la bandeja de permisos del panel jamas se abre.
+      '--permission-prompt-tool', 'stdio',
     ];
     if (this.sessionId) args.push('--resume', this.sessionId);
     if (this.model) args.push('--model', this.model);
     if (this.permissionMode) args.push('--permission-mode', this.permissionMode);
     if (this.effort) args.push('--effort', this.effort);
+    // El CLI confina las herramientas al cwd; cada carpeta extra hay que
+    // declararla o responde "may only list files in the allowed working
+    // directories for this session".
+    for (const dir of this.addDirs) args.push('--add-dir', dir);
     args.push(...this.extraArgs);
     return args;
   }
@@ -101,6 +120,10 @@ export class ClaudeSession extends EventEmitter {
     child.on('error', (err) => this.fail(`Error del proceso: ${err.message}`));
     child.on('exit', (code, signal) => this.onExit(code, signal));
 
+    // El handshake va primero: su respuesta trae el catalogo de comandos.
+    this.initRequestId = `init_${randomUUID()}`;
+    this.writeLine({ type: 'control_request', request_id: this.initRequestId, request: { subtype: 'initialize' } });
+
     // Vacia lo que se haya encolado mientras arrancaba.
     const queued = this.pendingInput.splice(0, this.pendingInput.length);
     for (const payload of queued) this.writeLine(payload);
@@ -114,6 +137,7 @@ export class ClaudeSession extends EventEmitter {
     }
     this.activeTools.clear();
     this.streamMessageIds.clear();
+    this.messageBlockOffsets.clear();
     for (const [, pending] of this.pendingPermissions) clearTimeout(pending.timer);
     this.pendingPermissions.clear();
     this.busy = false;
@@ -187,7 +211,7 @@ export class ClaudeSession extends EventEmitter {
     return true;
   }
 
-  answerPermission(id, allow, note) {
+  answerPermission(id, allow, note, remember) {
     const pending = this.pendingPermissions.get(id);
     if (!pending) return false;
     clearTimeout(pending.timer);
@@ -195,11 +219,16 @@ export class ClaudeSession extends EventEmitter {
     const response = allow
       ? { behavior: 'allow', updatedInput: pending.input || {} }
       : { behavior: 'deny', message: note || 'Denegado desde Clawd Deck' };
+    // "Permitir siempre": se devuelven las reglas que el propio CLI propuso,
+    // que es como quedan guardadas en los settings del proyecto.
+    if (allow && remember && pending.suggestions?.length) {
+      response.updatedPermissions = pending.suggestions;
+    }
     this.writeLine({
       type: 'control_response',
       response: { subtype: 'success', request_id: pending.requestId, response },
     });
-    this.push({ type: 'permission_resolved', id, allow: Boolean(allow) });
+    this.push({ type: 'permission_resolved', id, allow: Boolean(allow), remembered: Boolean(allow && remember) });
     if (this.pendingPermissions.size === 0 && this.busy) this.setState('thinking');
     return true;
   }
@@ -245,6 +274,7 @@ export class ClaudeSession extends EventEmitter {
       case 'control_request':
         return this.handleControlRequest(event);
       case 'control_response':
+        return this.handleControlResponse(event);
       case 'control_cancel_request':
         return;
       default:
@@ -276,7 +306,24 @@ export class ClaudeSession extends EventEmitter {
       this.push({ type: 'notice', level: 'info', text: 'Contexto compactado.' });
       return;
     }
-    this.push({ type: 'notice', level: 'info', text: `system:${event.subtype || '?'}` });
+    // El CLI avisa aqui cuando bloquea una herramienta sin preguntar: fuera del
+    // cwd, por una regla de settings o porque nadie respondio. Mandarlo al log
+    // tecnico como "system:permission_denied" escondia el motivo, que es
+    // justo lo unico util para arreglarlo.
+    if (event.subtype === 'permission_denied') {
+      const reason = event.message || event.decision_reason || 'sin motivo indicado';
+      this.push({
+        type: 'notice',
+        level: 'error',
+        text: `Permiso denegado · ${event.tool_name || 'herramienta'}: ${reason}`,
+      });
+      return;
+    }
+    // El CLI emite latidos de progreso varias veces por turno. No aportan nada
+    // al hilo y lo inundan, asi que se descartan; el resto de subtipos
+    // desconocidos baja al log tecnico en vez de a la conversacion.
+    if (NOISY_SYSTEM_SUBTYPES.has(event.subtype)) return;
+    this.push({ type: 'log', text: `system:${event.subtype || '?'}` });
   }
 
   handleAssistant(event) {
@@ -284,8 +331,15 @@ export class ClaudeSession extends EventEmitter {
     if (event.session_id) this.sessionId = event.session_id;
     const messageId = message.id || `msg_${Date.now()}`;
     const blocks = Array.isArray(message.content) ? message.content : [];
+    // El CLI puede partir un mismo mensaje en varios eventos `assistant`, y cada
+    // uno reindexa su contenido desde 0. Los deltas, en cambio, usan el indice
+    // real dentro del mensaje completo. Sin este desplazamiento acumulado el
+    // bloque final no casa con el que se pinto en streaming y el texto sale
+    // duplicado (o encima del bloque de pensamiento).
+    const base = this.messageBlockOffsets.get(messageId) || 0;
+    if (blocks.length) this.messageBlockOffsets.set(messageId, base + blocks.length);
     blocks.forEach((block, index) => {
-      const blockId = `${messageId}:${index}`;
+      const blockId = `${messageId}:${base + index}`;
       if (block.type === 'text') {
         this.push({ type: 'block', id: blockId, kind: 'text', text: block.text || '', final: true, subagent: Boolean(event.parent_tool_use_id) });
       } else if (block.type === 'thinking') {
@@ -376,11 +430,27 @@ export class ClaudeSession extends EventEmitter {
       sessionId: this.sessionId,
       text: typeof event.result === 'string' ? event.result : null,
     };
+    this.messageBlockOffsets.clear();
     this.push({ type: 'turn_end', result: this.lastResult });
     this.setState(event.is_error ? 'error' : 'done');
     setTimeout(() => {
       if (!this.busy && (this.state === 'done' || this.state === 'error')) this.setState('idle');
     }, 6000).unref?.();
+  }
+
+  /** Respuesta a nuestros propios control_request. Solo interesa el handshake. */
+  handleControlResponse(event) {
+    const response = event.response || {};
+    if (!this.initRequestId || response.request_id !== this.initRequestId) return;
+    const payload = response.response || {};
+    if (!Array.isArray(payload.commands)) return;
+    this.commands = payload.commands.map((cmd) => ({
+      name: String(cmd.name || '').replace(/^\//, ''),
+      description: cmd.description || '',
+      argumentHint: cmd.argumentHint || cmd.argument_hint || '',
+      builtin: Boolean(cmd.builtin),
+    })).filter((cmd) => cmd.name);
+    this.push({ type: 'commands', items: this.commands });
   }
 
   handleControlRequest(event) {
@@ -392,6 +462,9 @@ export class ClaudeSession extends EventEmitter {
     const id = `perm_${randomUUID()}`;
     const input = request.input || request.tool_input || {};
     const toolName = request.tool_name || request.toolName || 'desconocida';
+    // El CLI propone reglas ("permitir siempre este comando") junto a la
+    // peticion; se guardan para poder devolverlas si el usuario las acepta.
+    const suggestions = Array.isArray(request.permission_suggestions) ? request.permission_suggestions : [];
     const timer = setTimeout(() => {
       if (this.pendingPermissions.has(id)) {
         this.push({ type: 'notice', level: 'warn', text: `Permiso para ${toolName} denegado por tiempo de espera.` });
@@ -399,12 +472,14 @@ export class ClaudeSession extends EventEmitter {
       }
     }, this.autoDenyMs);
     timer.unref?.();
-    this.pendingPermissions.set(id, { requestId: event.request_id, input, toolName, timer });
+    this.pendingPermissions.set(id, { requestId: event.request_id, input, toolName, timer, suggestions });
     this.push({
       type: 'permission',
       id,
-      tool: toolName,
+      tool: request.display_name || toolName,
       detail: describeToolInput(toolName, input),
+      reason: request.decision_reason || '',
+      canRemember: suggestions.length > 0,
       input,
       expiresInMs: this.autoDenyMs,
     });
@@ -452,6 +527,8 @@ export class ClaudeSession extends EventEmitter {
       model: this.model,
       permissionMode: this.permissionMode,
       effort: this.effort,
+      addDirs: this.addDirs,
+      commands: this.commands,
       turns: this.turns,
       totalCostUsd: this.totalCostUsd,
       lastResult: this.lastResult,
@@ -471,9 +548,29 @@ export class ClaudeSession extends EventEmitter {
     this.turns = 0;
     this.totalCostUsd = 0;
     this.lastResult = null;
+    // El catalogo pertenece al proyecto que se cierra; el proximo arranque
+    // vuelve a pedirlo con el handshake.
+    this.commands = [];
+    this.initRequestId = null;
+    // Lo que quedara encolado pertenece a la conversacion que se cierra; si no
+    // se descarta, el siguiente proceso lo recibiria como primer mensaje.
+    this.pendingInput = [];
     this.clearHistory();
     this.push({ type: 'reset' });
     this.setState('idle');
+  }
+
+  /**
+   * Cambia la carpeta sobre la que trabaja Claude. El `session_id` pertenece al
+   * proyecto anterior (y `--resume` lo buscaria en su historial), asi que
+   * cambiar de carpeta obliga a cerrar el proceso y empezar conversacion nueva.
+   * El proceso no se relanza aqui: arranca solo con el siguiente mensaje.
+   */
+  async setCwd(dir) {
+    if (dir === this.cwd) return false;
+    this.cwd = dir;
+    await this.reset();
+    return true;
   }
 }
 

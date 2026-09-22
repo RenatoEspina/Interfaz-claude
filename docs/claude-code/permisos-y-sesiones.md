@@ -22,6 +22,41 @@ Se fija con `--permission-mode` al arrancar. En Clawd Deck esta en el selector
 de la cabecera del chat; al cambiarlo se reinicia el proceso, porque es una
 opcion de arranque.
 
+## Quien contesta los prompts (el detalle que rompe el envoltorio)
+
+Con `-p`, el CLI decide a quien preguntar segun `--permission-prompts`, que por
+defecto vale `host`. Pero el "host" solo existe si se lo declaras: **sin
+`--permission-prompt-tool stdio` el CLI no envia ningun `control_request` con
+`can_use_tool`**. Se limita a denegar solo, escupiendo
+
+```
+system:permission_denied   {"message": "This command requires approval"}
+```
+
+y la bandeja de permisos del panel no se abre nunca, porque nadie le ha pedido
+nada. Con la bandera, el ciclo es:
+
+```
+CLI  -> control_request  {subtype: "can_use_tool", tool_name, input,
+                          decision_reason, permission_suggestions}
+panel -> control_response {subtype: "success", request_id,
+                          response: {behavior: "allow", updatedInput}}
+```
+
+Devolver ademas `updatedPermissions` con las `permission_suggestions` que vino
+proponiendo el CLI es lo que implementa "permitir siempre": la regla queda
+escrita en `.claude/settings.local.json` del proyecto.
+
+## Confinamiento al directorio de trabajo
+
+Aparte de los permisos, el CLI confina las herramientas al `cwd`. Tocar algo de
+fuera falla con "may only list files in the allowed working directories for this
+session", **sin preguntar**, porque no es un permiso sino un limite. Se abren
+carpetas extra con `--add-dir` (repetible), que Clawd Deck expone con la misma
+bandera.
+
+## Reglas finas
+
 Las reglas finas viven en `settings.json`:
 
 ```json

@@ -3,7 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { listDir, readIfExists, statIfExists, parseFrontmatter, truncate, safeJoin } from './util.js';
+import { listDir, readIfExists, statIfExists, parseFrontmatter, truncate, safeJoin, exists, isInside, resolveWithinRoots } from './util.js';
 
 const run = promisify(execFile);
 const HOME_CLAUDE = path.join(os.homedir(), '.claude');
@@ -297,6 +297,60 @@ export async function getTree(cwd, relative = '.') {
   return { dir: path.relative(cwd, dir) || '.', items };
 }
 
+/* -------------------------------------------------------------------- */
+/* Explorador para el selector de proyecto                               */
+/* -------------------------------------------------------------------- */
+
+/**
+ * Lista las subcarpetas de `target` para poder elegir sobre que proyecto
+ * trabaja Claude. Solo devuelve directorios y marca los que parecen un
+ * proyecto (tienen `.git` o `CLAUDE.md`), que son los que interesan al elegir.
+ *
+ * `getTree` sirve para mirar dentro del proyecto abierto y por eso usa
+ * `safeJoin`; esto se mueve por las raices permitidas, que es justo lo
+ * contrario, asi que valida con `resolveWithinRoots`.
+ */
+export async function browseDirs(target, roots) {
+  const dir = resolveWithinRoots(roots, target);
+  const stat = await statIfExists(dir);
+  if (!stat || !stat.isDirectory()) {
+    const err = new Error('La carpeta no existe o no es un directorio');
+    err.status = 404;
+    throw err;
+  }
+
+  const items = [];
+  for (const entry of await listDir(dir)) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith('.')) continue;
+    if (IGNORED_DIRS.has(entry.name)) continue;
+    const full = path.join(dir, entry.name);
+    items.push({ name: entry.name, path: full, ...(await projectMarks(full)) });
+  }
+  items.sort((a, b) => a.name.localeCompare(b.name));
+
+  // Solo se ofrece subir si el padre sigue dentro de las raices permitidas;
+  // asi el boton desaparece al llegar al tope en vez de dar un 403.
+  const parent = path.dirname(dir);
+  const canGoUp = parent !== dir && roots.some((root) => isInside(root, parent));
+
+  return {
+    dir,
+    parent: canGoUp ? parent : null,
+    roots,
+    ...(await projectMarks(dir)),
+    items,
+  };
+}
+
+async function projectMarks(dir) {
+  const [isRepo, hasMemory] = await Promise.all([
+    exists(path.join(dir, '.git')),
+    exists(path.join(dir, 'CLAUDE.md')),
+  ]);
+  return { isRepo, hasMemory };
+}
+
 const TEXT_EXT = new Set(['.md', '.markdown', '.txt', '.json', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.py', '.rb', '.go', '.rs', '.java', '.sh', '.bash', '.zsh', '.yml', '.yaml', '.toml', '.ini', '.css', '.scss', '.html', '.sql', '.env.example', '.gitignore', '.xml', '.csv']);
 
 export async function readProjectFile(cwd, relative) {
@@ -337,7 +391,9 @@ export async function writeProjectFile(cwd, relative, content) {
 /* -------------------------------------------------------------------- */
 
 export function projectSlug(cwd) {
-  return path.resolve(cwd).replace(/[/\\.]/g, '-').replace(/^-/, '-');
+  // Claude Code nombra la carpeta de ~/.claude/projects sustituyendo por "-"
+  // todo lo que no sea alfanumerico: barras, puntos y tambien los espacios.
+  return path.resolve(cwd).replace(/[^a-zA-Z0-9]/g, '-');
 }
 
 export async function getSessions(cwd, limit = 25) {

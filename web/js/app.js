@@ -25,6 +25,7 @@ const dom = {
   mPerm: $('#m-perm'),
   selModel: $('#sel-model'),
   selPerm: $('#sel-perm'),
+  selEffort: $('#sel-effort'),
   sideTitle: $('#side-title'),
   sideBody: $('#side-body'),
   sideRefresh: $('#side-refresh'),
@@ -41,8 +42,8 @@ let busy = false;
 /* ------------------------------------------------------------------ vista */
 
 const view = new StreamView(dom.stream, {
-  onPermission: async (id, allow) => {
-    try { await api.permission(id, allow); } catch (err) { notify(err.message); }
+  onPermission: async (id, allow, remember) => {
+    try { await api.permission(id, allow, remember); } catch (err) { notify(err.message); }
   },
 });
 
@@ -52,8 +53,38 @@ const panels = new Panels(dom.sideBody, {
     dom.input.focus();
     autoGrow();
   },
+  // Los comandos se lanzan de verdad, no solo se pegan en el compositor.
+  runPrompt: async (text) => {
+    if (busy) {
+      notify('Clawd sigue ocupado con el turno anterior');
+      return;
+    }
+    try {
+      await api.send(text);
+    } catch (err) {
+      notify(err.message);
+    }
+  },
   notify,
+  // Los paneles tambien se abren entre ellos (el resumen lleva a memoria, el
+  // selector de proyecto al resumen), asi que el titulo y el boton activo se
+  // sincronizan desde aqui en vez de en cada clic del carril.
+  onShow: syncPanelChrome,
 });
+
+/** Titulo y boton activo. No despliega el panel: en pantalla estrecha arranca
+ *  plegado a proposito, y `show` corre tambien sin que el usuario lo pida. */
+function syncPanelChrome(name) {
+  $$('#rail-nav .navbtn').forEach((btn) => btn.classList.toggle('is-active', btn.dataset.panel === name));
+  dom.sideTitle.textContent = PANEL_TITLES[name] || name;
+}
+
+/** Abrir un panel por peticion explicita del usuario: eso si lo despliega. */
+function openPanel(name) {
+  dom.app.classList.remove('side-hidden');
+  dom.sideOpen.hidden = true;
+  panels.show(name);
+}
 
 function notify(text) {
   dom.composerHint.textContent = text;
@@ -101,6 +132,14 @@ connectStream({
       case 'session':
         applySessionInfo(event.info);
         break;
+      case 'project':
+        applyProject(event);
+        break;
+      case 'commands':
+        // El catalogo llega al arrancar el proceso; si el panel esta abierto
+        // se repinta para que dejen de verse solo los comandos del disco.
+        if (panels.current === 'commands') panels.render();
+        break;
       case 'turn_end':
         view.handle(event);
         refreshState();
@@ -126,6 +165,17 @@ function applySnapshot(snapshot) {
   }
   if (snapshot.permissionMode) dom.selPerm.value = snapshot.permissionMode;
   if (snapshot.model) dom.selModel.value = snapshot.model;
+  dom.selEffort.value = snapshot.effort || '';
+}
+
+/** Cambio de proyecto en caliente. No toca el stream: el evento `reset` que lo
+ *  precede ya lo limpio, y asi el replay al reconectar no borra nada. */
+function applyProject(event) {
+  if (!event.cwd) return;
+  dom.chipCwd.textContent = event.cwd;
+  dom.projectName.textContent = event.name || event.cwd;
+  if (dom.emptyCwd) dom.emptyCwd.textContent = event.cwd;
+  dom.chipSession.textContent = 'sin sesion';
 }
 
 function applySessionInfo(info) {
@@ -215,6 +265,7 @@ async function pushSettings(restart) {
     const { snapshot } = await api.settings({
       model: dom.selModel.value || null,
       permissionMode: dom.selPerm.value,
+      effort: dom.selEffort.value || null,
       restart,
     });
     dom.mModel.textContent = snapshot.model || 'por defecto';
@@ -225,19 +276,14 @@ async function pushSettings(restart) {
 }
 dom.selModel.addEventListener('change', () => pushSettings(true));
 dom.selPerm.addEventListener('change', () => pushSettings(true));
+dom.selEffort.addEventListener('change', () => pushSettings(true));
 
 /* ---------------------------------------------------------------- panels */
 
 $$('#rail-nav .navbtn').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    $$('#rail-nav .navbtn').forEach((b) => b.classList.toggle('is-active', b === btn));
-    const name = btn.dataset.panel;
-    dom.sideTitle.textContent = PANEL_TITLES[name] || name;
-    dom.app.classList.remove('side-hidden');
-    dom.sideOpen.hidden = true;
-    panels.show(name);
-  });
+  btn.addEventListener('click', () => openPanel(btn.dataset.panel));
 });
+dom.chipCwd.addEventListener('click', () => openPanel('project'));
 dom.sideRefresh.addEventListener('click', () => panels.render());
 dom.sideCollapse.addEventListener('click', () => {
   dom.app.classList.add('side-hidden');

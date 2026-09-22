@@ -37,7 +37,7 @@ export const api = {
   startProcess: () => request('POST', '/api/start'),
   stopProcess: () => request('POST', '/api/stop'),
   settings: (payload) => request('POST', '/api/settings', payload),
-  permission: (id, allow) => request('POST', '/api/permission', { id, allow }),
+  permission: (id, allow, remember) => request('POST', '/api/permission', { id, allow, remember }),
 
   overview: () => request('GET', '/api/overview'),
   memory: () => request('GET', '/api/memory'),
@@ -49,6 +49,8 @@ export const api = {
   git: () => request('GET', '/api/git'),
   sessions: () => request('GET', '/api/sessions'),
   tree: (p) => request('GET', `/api/tree?path=${encodeURIComponent(p || '.')}`),
+  browse: (p) => request('GET', `/api/browse${p ? `?path=${encodeURIComponent(p)}` : ''}`),
+  setProject: (p) => request('POST', '/api/project', { path: p }),
   file: (p) => request('GET', `/api/file?path=${encodeURIComponent(p)}`),
   writeFile: (p, content) => request('PUT', '/api/file', { path: p, content }),
 
